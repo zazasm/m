@@ -1,0 +1,249 @@
+public class MapView
+    {
+        const int CELLS_PER_BLOCK = 18;
+
+        private Extensions.Counter CounterMovement = new Extensions.Counter(1);
+
+        public ViewPtr[,] m_setBlock;
+
+        private int Width, Height;
+
+        private int GetWidthOfBlock() { return (Width - 1) / CELLS_PER_BLOCK + 1; }
+        private int GetHeightOfBlock() { return (Height - 1) / CELLS_PER_BLOCK + 1; }
+
+        public MapView(int _Width, int _Height)
+        {
+            Width = _Width;
+            Height = _Height;
+
+            m_setBlock = new ViewPtr[GetWidthOfBlock(), GetHeightOfBlock()];
+            for (int x = 0; x < GetWidthOfBlock(); x++)
+                for (int y = 0; y < GetHeightOfBlock(); y++)
+                    m_setBlock[x, y] = new ViewPtr();
+        }
+
+        private int Block(int nPos)
+        {
+            return nPos / CELLS_PER_BLOCK;
+        }
+        private ViewPtr BlockSet(int nPosX, int nPosY) { return m_setBlock[Block(nPosX), Block(nPosY)]; }
+
+        public bool MoveTo<T>(T obj, int nNewPosX, int nNewPosY)
+            where T : IMapObj
+        {
+
+            int nOldPosX = obj.X;
+            int nOldPosY = obj.Y;
+            if ((nOldPosX >= 0 && nOldPosX < Width) == false)
+                return false;
+            if ((nOldPosY >= 0 && nOldPosY < Height) == false)
+                return false;
+            if ((nNewPosX >= 0 && nNewPosX < Width) == false)
+                return false;
+            if ((nNewPosY >= 0 && nNewPosY < Height) == false)
+                return false;
+
+            if (Block(nOldPosX) == Block(nNewPosX) && Block(nOldPosY) == Block(nNewPosY))
+                return false;
+
+            BlockSet(nOldPosX, nOldPosY).RemoveObject<T>(obj);
+            BlockSet(nNewPosX, nNewPosY).AddObject<T>(obj);
+
+            if (obj.ObjType == MapObjectType.Player)
+                obj.IndexInScreen = CounterMovement.Next;
+
+            return true;
+        }
+
+        public bool EnterMap<T>(T obj)
+            where T : IMapObj
+        {
+            if ((obj.X >= 0 && obj.X < Width) == false)
+                return false;
+            if ((obj.Y >= 0 && obj.Y < Height) == false)
+                return false;
+
+            BlockSet(obj.X, obj.Y).AddObject<T>(obj);
+
+            if (obj.ObjType == MapObjectType.Player)
+                obj.IndexInScreen = CounterMovement.Next;
+
+            return true;
+        }
+        public bool LeaveMap<T>(T obj)
+             where T : IMapObj
+        {
+            if ((obj.X >= 0 && obj.X < Width) == false)
+                return false;
+            if ((obj.Y >= 0 && obj.Y < Height) == false)
+                return false;
+
+                BlockSet(obj.X, obj.Y).RemoveObject<T>(obj);
+
+            return true;
+        }
+        public IEnumerable<IMapObj> Roles(MapObjectType typ, int X, int Y, Predicate<IMapObj> P = null)
+        {
+            for (int x = Math.Max(Block(X) - 1, 0); x <= Block(X) + 1 && x < GetWidthOfBlock(); x++)
+                for (int y = Math.Max(Block(Y) - 1, 0); y <= Block(Y) + 1 && y < GetHeightOfBlock(); y++)
+                {
+                    var list = m_setBlock[x, y].GetObjects(typ);
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (i >= list.Count)
+                            break;
+                        var element = list[i];
+                        if (element != null)
+                        {
+                            if (P != null)
+                            {
+                                if (P(element))
+                                    yield return element;
+                            }
+                            else if (element != null)
+                                yield return element;
+                        }
+                    }
+                }
+        }
+        public IEnumerable<IMapObj> GetAllMapRoles(MapObjectType typ, Predicate<IMapObj> P = null)
+        {
+            for (int x = 0; x < GetWidthOfBlock(); x++)
+                for (int y = 0; y  < GetHeightOfBlock(); y++)
+                {
+                    var list = m_setBlock[x, y].GetObjects(typ);
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (i >= list.Count)
+                            break;
+                        var element = list[i];
+                        if (element != null)
+                        {
+                            if (P != null)
+                            {
+                                if (P(element))
+                                    yield return element;
+                            }
+                            else if (element != null)
+                                yield return element;
+                        }
+                    }
+                }
+        }
+        public int GetAllMapRolesCount(MapObjectType typ, Predicate<IMapObj> P = null)
+        {
+            return GetAllMapRoles(typ, P).Count();
+        }
+        public T GetMapObject<T>(MapObjectType typ, uint UID, Predicate<IMapObj> P = null)
+        {
+            foreach (var obj in GetAllMapRoles(typ, P))
+                if (obj.UID == UID)
+                    return (T)obj;
+            return default(T);
+        }
+        public bool MapContain(MapObjectType typ, uint UID, Predicate<IMapObj> P = null)
+        {
+            foreach (var obj in GetAllMapRoles(typ, P))
+                if (obj.UID == UID)
+                    return true;
+            return false;
+        }
+        public void ClearMap(MapObjectType typ)
+        {
+            for (int x = 0; x < GetWidthOfBlock(); x++)
+                for (int y = 0; y < GetHeightOfBlock(); y++)
+                {
+                    m_setBlock[x, y].Clear(typ);
+                }
+        }
+        public bool TryGetObject<T>(uint UID, MapObjectType typ, int X, int Y, out T obj)
+            where T: IMapObj
+        {
+            for (int x = Math.Max(Block(X) - 1, 0); x <= Block(X) + 1 && x < GetWidthOfBlock(); x++)
+                for (int y = Math.Max(Block(Y) - 1, 0); y <= Block(Y) + 1 && y < GetHeightOfBlock(); y++)
+                {
+                    var list = m_setBlock[x, y];
+                    if (list.TryGetObject<T>(typ, UID, out obj))
+                        return true;
+                      
+                }
+            obj = default(T);
+            return false;
+        }
+        public bool Contain(uint UID, int X, int Y)
+        {
+            for (int x = Math.Max(Block(X) - 1, 0); x <= Block(X) + 1 && x < GetWidthOfBlock(); x++)
+                for (int y = Math.Max(Block(Y) - 1, 0); y <= Block(Y) + 1 && y < GetHeightOfBlock(); y++)
+                {
+                    var list = m_setBlock[x, y];
+                    for (int i = 0; i < (int)MapObjectType.Count; i++)
+                        if (list.ContainObject((MapObjectType)i, UID))
+                            return true;
+
+                }
+            return false;
+        }
+    }
+    public class ViewPtr
+    {
+        private Extensions.MyList<Role.IMapObj>[] Objects;
+        public ViewPtr()
+        {
+            Objects = new  Extensions.MyList<IMapObj>[(int)MapObjectType.Count];
+            for (int x = 0; x < (int)MapObjectType.Count; x++)
+                Objects[x] = new  Extensions.MyList<IMapObj>();
+        }
+
+      
+        public void AddObject<T>(T obj)
+             where T : IMapObj
+        {
+            Objects[(int)obj.ObjType].Add(obj);
+        }
+
+        public void RemoveObject<T>(T obj)
+            where T : IMapObj
+        {
+            Objects[(int)obj.ObjType].Remove(obj);
+        }
+
+
+        public bool ContainObject(MapObjectType obj_t, uint UID)
+        {
+            for (int x = 0; x < Objects[(int)obj_t].Count; x++)
+            {
+                var list = Objects[(int)obj_t];
+                if (x >= list.Count)
+                    break;
+                if (list[x].UID == UID)
+                    return true;
+            }
+            return false;
+        }
+
+        public bool TryGetObject<T>(MapObjectType obj_t, uint UID, out T obj)
+        {
+            for (int x = 0; x < Objects[(int)obj_t].Count; x++)
+            {
+                var list = Objects[(int)obj_t];
+                if (x >= list.Count)
+                    break;
+                if (list[x].UID == UID)
+                {
+                    obj = (T)list[x];
+                    return true;
+                }
+            }
+            obj = default(T);
+            return false;
+        }
+        public Extensions.MyList<IMapObj> GetObjects(MapObjectType typ)
+        {
+            return Objects[(int)typ];
+        }
+
+        public void Clear(MapObjectType typ)
+        {
+            Objects[(int)typ].Clear();
+        }
+    }
